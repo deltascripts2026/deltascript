@@ -1,658 +1,491 @@
--- ========================================================================================================================
--- MARCOSCRIPT | COMBAT & AIMBOT EDITION v2.0
--- FEATURES: 45 AIMBOT & COMBAT MODULES, WALKSPEED/JUMPPOWER, CUSTOM FOV, ANTI-AFK, BUILT-IN SCRIPTS (IY & SPY)
--- DESIGN: SUPER CLEAN, LIGHTWEIGHT & KEYLESS
--- ========================================================================================================================
+-- ==========================================================
+--  ATEZ HUB - SOURCE INTEGRATED RGB SPAWNER & CHAT
+-- ==========================================================
 
--- [[ SECTION 1: SERVICES & DEPENDENCIES ]]
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local Chat = game:GetService("Chat")
 local TweenService = game:GetService("TweenService")
-local CoreGui = game:GetService("CoreGui")
 
-local LocalPlayer = Players.LocalPlayer
-if not LocalPlayer then
-    repeat task.wait() until Players.LocalPlayer
-    LocalPlayer = Players.LocalPlayer
-end
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local mouse = player:GetMouse()
 
-local Camera = workspace.CurrentCamera
+local activeNPC = nil
+local moveConnection = nil
+local activeAnimations = {}
+local currentAnimState = "None"
 
--- [[ SECTION 2: SYSTEM STATE CONFIGURATION ]]
-local State = {
-    -- Movement & Utility
-    WalkSpeed = 16, WalkSpeedEnabled = false,
-    JumpPower = 50, JumpPowerEnabled = false,
-    FOV = 70, FOVEnabled = false,
-    DeleteAnimations = false, AntiAFK = true,
+local clickCount = 0
+local clickConnection = nil
+local targetPosition = nil
 
-    -- 45 COMBAT & AIMBOT MODULE STATES
-    Aimbot = {
-        -- Core Aimbot (1-6)
-        Enabled = false, KeybindHold = true, AimKey = Enum.UserInputType.MouseButton2, Smoothness = 1, AimBone = "Head", VisibilityCheck = true, TeamCheck = true,
-        -- Advanced Aim Logic (7-12)
-        SilentAim = false, SilentAimHitChance = 100, TargetKnocked = false, TargetNPCs = false, TargetFriends = false, TargetBehindWalls = false,
-        -- Prediction & Ballistics (13-17)
-        PredictMovement = false, BulletSpeed = 1000, PingCompensation = false, DropCompensation = false, HitScan = true,
-        -- FOV Ring Customization (18-24)
-        ShowFOV = false, FOVRadius = 150, FOVFilled = false, FOVColor = Color3.fromRGB(0, 170, 255), FOVThickness = 1, FOVTransparency = 0.5, FOVSides = 64,
-        -- Target Lock & Indicators (25-30)
-        LockNotification = false, ShowTargetSnapline = false, TargetSnapColor = Color3.fromRGB(255, 35, 75), AutoLockNearest = false, UnlockOnDeath = true, LockHighlight = false,
-        -- Triggerbot Suite (31-35)
-        Triggerbot = false, TriggerDelay = 0.05, TriggerOnHeadOnly = false, TriggerHoldKey = false, TriggerTeamCheck = true,
-        -- Recoil & Weapon Tweaks (36-40)
-        NoRecoil = false, NoSpread = false, FastReload = false, InfiniteAmmo = false, InstantHit = false,
-        -- Target Selection Modifiers (41-45)
-        PrioritizeLowHP = false, PrioritizeDistance = true, MaxTargetDistance = 1000, AutoSwitchTarget = true, IgnoreShielded = false
-    }
-}
+-- ==========================================================
+-- SENİN SOURCE'UNDAKİ RGB COLOR & FALLBACK CHAT SİSTEMİ
+-- ==========================================================
+local currentRgbColor = Color3.fromRGB(0, 255, 170)
 
--- [[ SECTION 3: THEME COLOR TOKENS ]]
-local Theme = {
-    WindowBackground  = Color3.fromRGB(15, 15, 20),
-    SidebarBackground = Color3.fromRGB(20, 20, 28),
-    CardBackground    = Color3.fromRGB(26, 26, 36),
-    CardBorder        = Color3.fromRGB(40, 40, 55),
-    Accent            = Color3.fromRGB(0, 170, 255),
-    AccentGlow        = Color3.fromRGB(80, 200, 255),
-    TextActive        = Color3.fromRGB(250, 250, 255),
-    TextInactive      = Color3.fromRGB(140, 140, 160),
-    TextSubtle        = Color3.fromRGB(90, 90, 110),
-    ToggleActive      = Color3.fromRGB(0, 170, 255),
-    ToggleInactive    = Color3.fromRGB(40, 40, 55)
-}
-
--- [[ SECTION 4: DOM HELPER FUNCTIONS ]]
-local UIBuilder = {}
-
-function UIBuilder.CreateCorner(radius, parent)
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, radius)
-    corner.Parent = parent
-    return corner
-end
-
-function UIBuilder.CreateStroke(color, thickness, parent)
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = color
-    stroke.Thickness = thickness
-    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    stroke.Parent = parent
-    return stroke
-end
-
--- [[ SECTION 5: SCREEN GUI SETUP ]]
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "Marcoscript_AimbotEdition"
-ScreenGui.ResetOnSpawn = false
-
-pcall(function()
-    ScreenGui.Parent = CoreGui
+task.spawn(function()
+    while task.wait() do
+        local hue = tick() % 5 / 5
+        currentRgbColor = Color3.fromHSV(hue, 1, 1)
+    end
 end)
-if not ScreenGui.Parent then
-    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Senin Source'undaki Fallback Chat Fonksiyonu
+local function fallbackChat(targetCharacter, message)
+    if targetCharacter and targetCharacter:FindFirstChild("Head") then
+        pcall(function()
+            Chat:Chat(targetCharacter.Head, message, Enum.ChatColor.White)
+        end)
+    end
 end
 
--- ========================================================================================================================
--- [MAIN MARCOSCRIPT INTERFACE]
--- ========================================================================================================================
-
-local MainFrame = Instance.new("Frame")
-MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 780, 0, 520)
-MainFrame.Position = UDim2.new(0.5, -390, 0.5, -260)
-MainFrame.BackgroundColor3 = Theme.WindowBackground
-MainFrame.BorderSizePixel = 0
-MainFrame.Active = true
-MainFrame.Draggable = true
-MainFrame.ClipsDescendants = true
-MainFrame.Parent = ScreenGui
-
-UIBuilder.CreateCorner(14, MainFrame)
-local MainStroke = UIBuilder.CreateStroke(Theme.Accent, 2, MainFrame)
-
--- Sidebar
-local Sidebar = Instance.new("Frame")
-Sidebar.Name = "Sidebar"
-Sidebar.Size = UDim2.new(0, 200, 1, 0)
-Sidebar.BackgroundColor3 = Theme.SidebarBackground
-Sidebar.BorderSizePixel = 0
-Sidebar.Parent = MainFrame
-
-UIBuilder.CreateCorner(14, Sidebar)
-
--- Title Header
-local HeaderContainer = Instance.new("Frame")
-HeaderContainer.Size = UDim2.new(1, 0, 0, 70)
-HeaderContainer.BackgroundTransparency = 1
-HeaderContainer.Parent = Sidebar
-
-local LogoTitle = Instance.new("TextLabel")
-LogoTitle.Size = UDim2.new(1, -20, 0, 30)
-LogoTitle.Position = UDim2.new(0, 18, 0, 16)
-LogoTitle.Text = "MARCOSCRIPT"
-LogoTitle.TextColor3 = Theme.Accent
-LogoTitle.TextSize = 20
-LogoTitle.Font = Enum.Font.GothamBold
-LogoTitle.TextXAlignment = Enum.TextXAlignment.Left
-LogoTitle.BackgroundTransparency = 1
-LogoTitle.Parent = HeaderContainer
-
-local LogoSubtitle = Instance.new("TextLabel")
-LogoSubtitle.Size = UDim2.new(1, -20, 0, 15)
-LogoSubtitle.Position = UDim2.new(0, 18, 0, 42)
-LogoSubtitle.Text = "Aimbot & Utility Engine"
-LogoSubtitle.TextColor3 = Theme.TextSubtle
-LogoSubtitle.TextSize = 10
-LogoSubtitle.Font = Enum.Font.GothamSemibold
-LogoSubtitle.TextXAlignment = Enum.TextXAlignment.Left
-LogoSubtitle.BackgroundTransparency = 1
-LogoSubtitle.Parent = HeaderContainer
-
--- Navigation Tab Holder
-local TabHolder = Instance.new("Frame")
-TabHolder.Size = UDim2.new(1, -20, 1, -90)
-TabHolder.Position = UDim2.new(0, 10, 0, 75)
-TabHolder.BackgroundTransparency = 1
-TabHolder.Parent = Sidebar
-
-local TabListLayout = Instance.new("UIListLayout")
-TabListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-TabListLayout.Padding = UDim.new(0, 6)
-TabListLayout.Parent = TabHolder
-
--- Page Viewport
-local PageHolder = Instance.new("Frame")
-PageHolder.Size = UDim2.new(1, -215, 1, -20)
-PageHolder.Position = UDim2.new(0, 208, 0, 10)
-PageHolder.BackgroundTransparency = 1
-PageHolder.Parent = MainFrame
-
-local Pages = {}
-
-local function CreatePage(pageName)
-    local scroll = Instance.new("ScrollingFrame")
-    scroll.Name = pageName .. "Page"
-    scroll.Size = UDim2.new(1, -5, 1, 0)
-    scroll.BackgroundTransparency = 1
-    scroll.ScrollBarThickness = 4
-    scroll.ScrollBarImageColor3 = Theme.Accent
-    scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-    scroll.Visible = false
-    scroll.Parent = PageHolder
-
-    local list = Instance.new("UIListLayout")
-    list.SortOrder = Enum.SortOrder.LayoutOrder
-    list.Padding = UDim.new(0, 8)
-    list.Parent = scroll
-
-    list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        scroll.CanvasSize = UDim2.new(0, 0, 0, list.AbsoluteContentSize.Y + 15)
-    end)
-
-    Pages[pageName] = scroll
-    return scroll
+-- ESKİ GUI TEMİZLİĞİ
+if playerGui:FindFirstChild("AtezCompactSpawner") then
+    playerGui.AtezCompactSpawner:Destroy()
 end
 
-local function CreateTabButton(tabName, iconGraphic)
+-- ==========================================================
+-- 1. KOMPAKT GUI
+-- ==========================================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AtezCompactSpawner"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 220, 0, 340)
+mainFrame.Position = UDim2.new(0.04, 0, 0.2, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+mainFrame.BackgroundTransparency = 0.1
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 10)
+mainCorner.Parent = mainFrame
+
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Thickness = 1.5
+mainStroke.Transparency = 0.2
+mainStroke.Parent = mainFrame
+
+-- BAŞLIK BAR
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 32)
+titleBar.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 10)
+titleCorner.Parent = titleBar
+
+local titleText = Instance.new("TextLabel")
+titleText.Size = UDim2.new(1, -10, 1, 0)
+titleText.Position = UDim2.new(0, 8, 0, 0)
+titleText.Text = "ATEZ HUB // RGB CHAT"
+titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleText.TextSize = 10
+titleText.Font = Enum.Font.GothamBold
+titleText.TextXAlignment = Enum.TextXAlignment.Left
+titleText.BackgroundTransparency = 1
+titleText.Parent = titleBar
+
+-- PROFIL RESMI
+local avatarFrame = Instance.new("Frame")
+avatarFrame.Size = UDim2.new(0, 40, 0, 40)
+avatarFrame.Position = UDim2.new(0.5, -20, 0.11, 0)
+avatarFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
+avatarFrame.Parent = mainFrame
+
+local avatarCorner = Instance.new("UICorner")
+avatarCorner.CornerRadius = UDim.new(1, 0)
+avatarCorner.Parent = avatarFrame
+
+local avatarImage = Instance.new("ImageLabel")
+avatarImage.Size = UDim2.new(1, 0, 1, 0)
+avatarImage.BackgroundTransparency = 1
+avatarImage.Image = "rbxassetid://0"
+avatarImage.Parent = avatarFrame
+
+local imgCorner = Instance.new("UICorner")
+imgCorner.CornerRadius = UDim.new(1, 0)
+imgCorner.Parent = avatarImage
+
+-- INPUT KUTULARI
+local nameInput = Instance.new("TextBox")
+nameInput.Size = UDim2.new(0.88, 0, 0, 26)
+nameInput.Position = UDim2.new(0.06, 0, 0.25, 0)
+nameInput.PlaceholderText = "Oyuncu Adı..."
+nameInput.Text = ""
+nameInput.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
+nameInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+nameInput.PlaceholderColor3 = Color3.fromRGB(120, 120, 140)
+nameInput.Font = Enum.Font.GothamMedium
+nameInput.TextSize = 10
+nameInput.Parent = mainFrame
+
+local inC1 = Instance.new("UICorner")
+inC1.CornerRadius = UDim.new(0, 6)
+inC1.Parent = nameInput
+
+local spawnBtn = Instance.new("TextButton")
+spawnBtn.Size = UDim2.new(0.42, 0, 0, 26)
+spawnBtn.Position = UDim2.new(0.06, 0, 0.34, 0)
+spawnBtn.Text = "SPAWN ET"
+spawnBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 110)
+spawnBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+spawnBtn.Font = Enum.Font.GothamBold
+spawnBtn.TextSize = 10
+spawnBtn.Parent = mainFrame
+
+local btnC1 = Instance.new("UICorner")
+btnC1.CornerRadius = UDim.new(0, 6)
+btnC1.Parent = spawnBtn
+
+local removeBtn = Instance.new("TextButton")
+removeBtn.Size = UDim2.new(0.42, 0, 0, 26)
+removeBtn.Position = UDim2.new(0.52, 0, 0.34, 0)
+removeBtn.Text = "SİL"
+removeBtn.BackgroundColor3 = Color3.fromRGB(200, 45, 45)
+removeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+removeBtn.Font = Enum.Font.GothamBold
+removeBtn.TextSize = 10
+removeBtn.Parent = mainFrame
+
+local btnC2 = Instance.new("UICorner")
+btnC2.CornerRadius = UDim.new(0, 6)
+btnC2.Parent = removeBtn
+
+-- CHAT ALANI
+local chatInput = Instance.new("TextBox")
+chatInput.Size = UDim2.new(0.88, 0, 0, 26)
+chatInput.Position = UDim2.new(0.06, 0, 0.43, 0)
+chatInput.PlaceholderText = "Chat Mesajı..."
+chatInput.Text = ""
+chatInput.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
+chatInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+chatInput.PlaceholderColor3 = Color3.fromRGB(120, 120, 140)
+chatInput.Font = Enum.Font.GothamMedium
+chatInput.TextSize = 10
+chatInput.Parent = mainFrame
+
+local inC2 = Instance.new("UICorner")
+inC2.CornerRadius = UDim.new(0, 6)
+inC2.Parent = chatInput
+
+local talkBtn = Instance.new("TextButton")
+talkBtn.Size = UDim2.new(0.88, 0, 0, 26)
+talkBtn.Position = UDim2.new(0.06, 0, 0.52, 0)
+talkBtn.Text = "💬 KONUŞTUR"
+talkBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 220)
+talkBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+talkBtn.Font = Enum.Font.GothamBold
+talkBtn.TextSize = 10
+talkBtn.Parent = mainFrame
+
+local talkC = Instance.new("UICorner")
+talkC.CornerRadius = UDim.new(0, 6)
+talkC.Parent = talkBtn
+
+-- KUMANDA FRAME
+local controlFrame = Instance.new("Frame")
+controlFrame.Size = UDim2.new(0.88, 0, 0, 120)
+controlFrame.Position = UDim2.new(0.06, 0, 0.61, 0)
+controlFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+controlFrame.Parent = mainFrame
+
+local ctrlC = Instance.new("UICorner")
+ctrlC.CornerRadius = UDim.new(0, 8)
+ctrlC.Parent = controlFrame
+
+local function createPadButton(text, pos, size)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, 0, 0, 38)
-    btn.Text = "    " .. iconGraphic .. "   " .. tabName
-    btn.TextColor3 = Theme.TextInactive
-    btn.BackgroundColor3 = Color3.fromRGB(16, 16, 22)
+    btn.Size = size or UDim2.new(0, 30, 0, 30)
+    btn.Position = pos
+    btn.Text = text
+    btn.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
     btn.Font = Enum.Font.GothamBold
     btn.TextSize = 11
-    btn.TextXAlignment = Enum.TextXAlignment.Left
-    btn.Parent = TabHolder
+    btn.Parent = controlFrame
 
-    UIBuilder.CreateCorner(8, btn)
-
-    btn.MouseButton1Click:Connect(function()
-        for key, page in pairs(Pages) do
-            page.Visible = (key == tabName)
-        end
-        for _, child in pairs(TabHolder:GetChildren()) do
-            if child:IsA("TextButton") then
-                TweenService:Create(child, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(16, 16, 22), TextColor3 = Theme.TextInactive}):Play()
-            end
-        end
-        TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Theme.Accent, TextColor3 = Theme.TextActive}):Play()
-    end)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = btn
 
     return btn
 end
 
--- Creating Pages & Tabs
-local AimbotCorePage = CreatePage("AIMBOT CORE")
-local AimbotAdvPage  = CreatePage("AIM ADVANCED")
-local TriggerbotPage = CreatePage("TRIGGERBOT")
-local MovementPage   = CreatePage("MOVEMENT")
-local MiscPage       = CreatePage("MISC & UTILITY")
-local ScriptsPage    = CreatePage("BUILT-IN SCRIPTS")
+local btnUp = createPadButton("▲", UDim2.new(0.5, -15, 0.08, 0))
+local btnDown = createPadButton("▼", UDim2.new(0.5, -15, 0.62, 0))
+local btnLeft = createPadButton("◄", UDim2.new(0.5, -50, 0.62, 0))
+local btnRight = createPadButton("►", UDim2.new(0.5, 20, 0.62, 0))
+local btnJump = createPadButton("ZIPLA", UDim2.new(0.5, -35, 0.35, 0), UDim2.new(0, 70, 0, 28))
 
-local AimbotCoreTab  = CreateTabButton("AIMBOT CORE", "🎯")
-local AimbotAdvTab   = CreateTabButton("AIM ADVANCED", "⚙")
-local TriggerbotTab  = CreateTabButton("TRIGGERBOT", "⚡")
-local MovementTab    = CreateTabButton("MOVEMENT", "🏃")
-local MiscTab        = CreateTabButton("MISC & UTILITY", "🛠")
-local ScriptsTab     = CreateTabButton("BUILT-IN SCRIPTS", "📜")
-
-AimbotCorePage.Visible = true
-AimbotCoreTab.BackgroundColor3 = Theme.Accent
-AimbotCoreTab.TextColor3 = Theme.TextActive
-
--- [[ UI COMPONENT FACTORIES ]]
-
-local function CreateToggleCard(targetPage, cardTitle, cardDesc, defaultState, callback)
-    local card = Instance.new("Frame")
-    card.Size = UDim2.new(1, -10, 0, 48)
-    card.BackgroundColor3 = Theme.CardBackground
-    card.Parent = targetPage
-
-    UIBuilder.CreateCorner(8, card)
-    local stroke = UIBuilder.CreateStroke(Theme.CardBorder, 1, card)
-
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -60, 0, 18)
-    title.Position = UDim2.new(0, 12, 0, 6)
-    title.Text = cardTitle
-    title.TextColor3 = Theme.TextActive
-    title.TextSize = 11
-    title.Font = Enum.Font.GothamBold
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.BackgroundTransparency = 1
-    title.Parent = card
-
-    local desc = Instance.new("TextLabel")
-    desc.Size = UDim2.new(1, -60, 0, 16)
-    desc.Position = UDim2.new(0, 12, 0, 24)
-    desc.Text = cardDesc
-    desc.TextColor3 = Theme.TextSubtle
-    desc.TextSize = 9
-    desc.Font = Enum.Font.Gotham
-    desc.TextXAlignment = Enum.TextXAlignment.Left
-    desc.BackgroundTransparency = 1
-    desc.Parent = card
-
-    local track = Instance.new("Frame")
-    track.Size = UDim2.new(0, 36, 0, 20)
-    track.Position = UDim2.new(1, -46, 0.5, -10)
-    track.BackgroundColor3 = defaultState and Theme.Accent or Theme.ToggleInactive
-    track.Parent = card
-
-    UIBuilder.CreateCorner(100, track)
-
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.new(0, 16, 0, 16)
-    knob.Position = defaultState and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
-    knob.BackgroundColor3 = Theme.TextActive
-    knob.Parent = track
-
-    UIBuilder.CreateCorner(100, knob)
-
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, 0, 1, 0)
-    btn.BackgroundTransparency = 1
-    btn.Text = ""
-    btn.Parent = card
-
-    local enabled = defaultState
-
-    btn.MouseButton1Click:Connect(function()
-        enabled = not enabled
-        TweenService:Create(stroke, TweenInfo.new(0.2), {Color = enabled and Theme.Accent or Theme.CardBorder}):Play()
-        TweenService:Create(track, TweenInfo.new(0.2), {BackgroundColor3 = enabled and Theme.Accent or Theme.ToggleInactive}):Play()
-        TweenService:Create(knob, TweenInfo.new(0.2), {
-            Position = enabled and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
-        }):Play()
-        callback(enabled)
-    end)
-end
-
-local function CreateSliderCard(targetPage, titleText, minVal, maxVal, defaultVal, callback)
-    local card = Instance.new("Frame")
-    card.Size = UDim2.new(1, -10, 0, 56)
-    card.BackgroundColor3 = Theme.CardBackground
-    card.Parent = targetPage
-
-    UIBuilder.CreateCorner(8, card)
-    UIBuilder.CreateStroke(Theme.CardBorder, 1, card)
-
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(0.6, 0, 0, 18)
-    title.Position = UDim2.new(0, 12, 0, 6)
-    title.Text = titleText
-    title.TextColor3 = Theme.TextActive
-    title.TextSize = 11
-    title.Font = Enum.Font.GothamBold
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.BackgroundTransparency = 1
-    title.Parent = card
-
-    local valLabel = Instance.new("TextLabel")
-    valLabel.Size = UDim2.new(0.3, 0, 0, 18)
-    valLabel.Position = UDim2.new(0.7, -12, 0, 6)
-    valLabel.Text = tostring(defaultVal)
-    valLabel.TextColor3 = Theme.Accent
-    valLabel.TextSize = 11
-    valLabel.Font = Enum.Font.GothamBold
-    valLabel.TextXAlignment = Enum.TextXAlignment.Right
-    valLabel.BackgroundTransparency = 1
-    valLabel.Parent = card
-
-    local sliderTrack = Instance.new("Frame")
-    sliderTrack.Size = UDim2.new(1, -24, 0, 6)
-    sliderTrack.Position = UDim2.new(0, 12, 0, 36)
-    sliderTrack.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
-    sliderTrack.Parent = card
-
-    UIBuilder.CreateCorner(4, sliderTrack)
-
-    local sliderFill = Instance.new("Frame")
-    sliderFill.Size = UDim2.new((defaultVal - minVal) / (maxVal - minVal), 0, 1, 0)
-    sliderFill.BackgroundColor3 = Theme.Accent
-    sliderFill.Parent = sliderTrack
-
-    UIBuilder.CreateCorner(4, sliderFill)
-
-    local isDragging = false
-
-    local function UpdateSlider(input)
-        local pos = math.clamp((input.Position.X - sliderTrack.AbsolutePosition.X) / sliderTrack.AbsoluteSize.X, 0, 1)
-        local value = math.floor(minVal + (maxVal - minVal) * pos)
-        sliderFill.Size = UDim2.new(pos, 0, 1, 0)
-        valLabel.Text = tostring(value)
-        callback(value)
-    end
-
-    sliderTrack.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            isDragging = true
-            UpdateSlider(input)
-        end
-    end)
-
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            isDragging = false
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            UpdateSlider(input)
-        end
-    end)
-end
-
-local function CreateActionCard(targetPage, titleText, descText, btnText, callback)
-    local card = Instance.new("Frame")
-    card.Size = UDim2.new(1, -10, 0, 56)
-    card.BackgroundColor3 = Theme.CardBackground
-    card.Parent = targetPage
-
-    UIBuilder.CreateCorner(8, card)
-    UIBuilder.CreateStroke(Theme.CardBorder, 1, card)
-
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(0.6, 0, 0, 18)
-    title.Position = UDim2.new(0, 12, 0, 8)
-    title.Text = titleText
-    title.TextColor3 = Theme.TextActive
-    title.TextSize = 11
-    title.Font = Enum.Font.GothamBold
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.BackgroundTransparency = 1
-    title.Parent = card
-
-    local desc = Instance.new("TextLabel")
-    desc.Size = UDim2.new(0.6, 0, 0, 16)
-    desc.Position = UDim2.new(0, 12, 0, 28)
-    desc.Text = descText
-    desc.TextColor3 = Theme.TextSubtle
-    desc.TextSize = 9
-    desc.Font = Enum.Font.Gotham
-    desc.TextXAlignment = Enum.TextXAlignment.Left
-    desc.BackgroundTransparency = 1
-    desc.Parent = card
-
-    local actionBtn = Instance.new("TextButton")
-    actionBtn.Size = UDim2.new(0.3, 0, 0, 32)
-    actionBtn.Position = UDim2.new(0.7, -10, 0.5, -16)
-    actionBtn.BackgroundColor3 = Theme.Accent
-    actionBtn.Text = btnText
-    actionBtn.TextColor3 = Theme.TextActive
-    actionBtn.Font = Enum.Font.GothamBold
-    actionBtn.TextSize = 10
-    actionBtn.Parent = card
-
-    UIBuilder.CreateCorner(6, actionBtn)
-    actionBtn.MouseButton1Click:Connect(callback)
-end
-
--- ================================================================================================================= realm
--- [POPULATING 45 COMBAT & AIMBOT FEATURES]
--- ========================================================================================================================
-
--- [[ AIMBOT CORE PAGE (15 Features) ]]
-CreateToggleCard(AimbotCorePage, "1. Main Aimbot Lock", "Enable smooth camera tracking lock", false, function(v) State.Aimbot.Enabled = v end)
-CreateToggleCard(AimbotCorePage, "2. Hold Key Mode", "Require holding right click to track", true, function(v) State.Aimbot.KeybindHold = v end)
-CreateToggleCard(AimbotCorePage, "3. Team Check Filter", "Ignore players on your team", true, function(v) State.Aimbot.TeamCheck = v end)
-CreateToggleCard(AimbotCorePage, "4. Visibility Check (Wall)", "Only lock onto exposed players", true, function(v) State.Aimbot.VisibilityCheck = v end)
-CreateToggleCard(AimbotCorePage, "5. Target Knocked Players", "Include downed/ragdolled targets", false, function(v) State.Aimbot.TargetKnocked = v end)
-CreateToggleCard(AimbotCorePage, "6. Target NPCs", "Lock onto non-player enemy bots", false, function(v) State.Aimbot.TargetNPCs = v end)
-CreateToggleCard(AimbotCorePage, "7. Target Friends List", "Lock onto players on friend list", false, function(v) State.Aimbot.TargetFriends = v end)
-CreateToggleCard(AimbotCorePage, "8. Target Behind Walls", "Override occlusion & force lock", false, function(v) State.Aimbot.TargetBehindWalls = v end)
-CreateToggleCard(AimbotCorePage, "9. Render FOV Circle", "Draw visual lock radius on screen", false, function(v) State.Aimbot.ShowFOV = v end)
-CreateToggleCard(AimbotCorePage, "10. Filled FOV Circle", "Fill FOV ring with transparency", false, function(v) State.Aimbot.FOVFilled = v end)
-CreateSliderCard(AimbotCorePage, "11. FOV Radius Size", 30, 800, 150, function(v) State.Aimbot.FOVRadius = v end)
-CreateSliderCard(AimbotCorePage, "12. Aim Smoothness Multiplier", 1, 20, 1, function(v) State.Aimbot.Smoothness = v end)
-CreateToggleCard(AimbotCorePage, "13. Lock Snapline Tracer", "Draw tracer line to current lock target", false, function(v) State.Aimbot.ShowTargetSnapline = v end)
-CreateToggleCard(AimbotCorePage, "14. Auto Lock Nearest Target", "Instantly lock nearest player in FOV", false, function(v) State.Aimbot.AutoLockNearest = v end)
-CreateToggleCard(AimbotCorePage, "15. Unlock On Target Death", "Release lock when target perishes", true, function(v) State.Aimbot.UnlockOnDeath = v end)
-
--- [[ AIM ADVANCED PAGE (15 Features) ]]
-CreateToggleCard(AimbotAdvPage, "16. Silent Aim Module", "Redirect bullet raycasts without moving camera", false, function(v) State.Aimbot.SilentAim = v end)
-CreateSliderCard(AimbotAdvPage, "17. Silent Aim Hit Chance (%)", 1, 100, 100, function(v) State.Aimbot.SilentAimHitChance = v end)
-CreateToggleCard(AimbotAdvPage, "18. Predictive Aiming", "Account for target velocity movement", false, function(v) State.Aimbot.PredictMovement = v end)
-CreateSliderCard(AimbotAdvPage, "19. Bullet Velocity Speed", 100, 5000, 1000, function(v) State.Aimbot.BulletSpeed = v end)
-CreateToggleCard(AimbotAdvPage, "20. Ping Compensation Logic", "Adjust lead angle based on player latency", false, function(v) State.Aimbot.PingCompensation = v end)
-CreateToggleCard(AimbotAdvPage, "21. Gravity Drop Compensation", "Compensate bullet arc trajectories", false, function(v) State.Aimbot.DropCompensation = v end)
-CreateToggleCard(AimbotAdvPage, "22. HitScan Raycast Mode", "Instant raycast calculation without delay", true, function(v) State.Aimbot.HitScan = v end)
-CreateToggleCard(AimbotAdvPage, "23. Target Highlight Box", "Draw glowing highlight over locked player", false, function(v) State.Aimbot.LockHighlight = v end)
-CreateToggleCard(AimbotAdvPage, "24. Lock On-Screen Notification", "Show status text when locked on", false, function(v) State.Aimbot.LockNotification = v end)
-CreateToggleCard(AimbotAdvPage, "25. Prioritize Low Health Targets", "Prefer targets with lowest HP in FOV", false, function(v) State.Aimbot.PrioritizeLowHP = v end)
-CreateToggleCard(AimbotAdvPage, "26. Prioritize Distance Proximity", "Prefer closest targets in 3D space", true, function(v) State.Aimbot.PrioritizeDistance = v end)
-CreateSliderCard(AimbotAdvPage, "27. Max Target Distance Radius", 100, 5000, 1000, function(v) State.Aimbot.MaxTargetDistance = v end)
-CreateToggleCard(AimbotAdvPage, "28. Auto Switch Target On Death", "Automatically jump to next target", true, function(v) State.Aimbot.AutoSwitchTarget = v end)
-CreateToggleCard(AimbotAdvPage, "29. Ignore Shielded/Invulnerable", "Skip spawn protected players", false, function(v) State.Aimbot.IgnoreShielded = v end)
-CreateToggleCard(AimbotAdvPage, "30. Instant Hit Redirect", "Force instant impact resolution", false, function(v) State.Aimbot.InstantHit = v end)
-
--- [[ TRIGGERBOT & WEAPONS PAGE (10 Features) ]]
-CreateToggleCard(TriggerbotPage, "31. Automatic Triggerbot", "Instantly fire when crosshair hovers target", false, function(v) State.Aimbot.Triggerbot = v end)
-CreateSliderCard(TriggerbotPage, "32. Triggerbot Reaction Delay (ms)", 0, 500, 50, function(v) State.Aimbot.TriggerDelay = v / 1000 end)
-CreateToggleCard(TriggerbotPage, "33. Trigger On Headshot Only", "Only auto-fire when on Head bone", false, function(v) State.Aimbot.TriggerOnHeadOnly = v end)
-CreateToggleCard(TriggerbotPage, "34. Triggerbot Hold Key Only", "Only trigger when keybind is held", false, function(v) State.Aimbot.TriggerHoldKey = v end)
-CreateToggleCard(TriggerbotPage, "35. Triggerbot Team Check", "Prevent firing at friendly teammates", true, function(v) State.Aimbot.TriggerTeamCheck = v end)
-CreateToggleCard(TriggerbotPage, "36. Camera Recoil Compensation", "Reduce weapon recoil camera shaking", false, function(v) State.Aimbot.NoRecoil = v end)
-CreateToggleCard(TriggerbotPage, "37. Bullet Spread Reduction", "Keep bullet deviation centered", false, function(v) State.Aimbot.NoSpread = v end)
-CreateToggleCard(TriggerbotPage, "38. Fast Weapon Reload Mod", "Reduce reload delay timings", false, function(v) State.Aimbot.FastReload = v end)
-CreateToggleCard(TriggerbotPage, "39. Infinite Ammo Bypass", "Prevent local ammo counter depletion", false, function(v) State.Aimbot.InfiniteAmmo = v end)
-CreateSliderCard(TriggerbotPage, "40. FOV Circle Thickness", 1, 5, 1, function(v) State.Aimbot.FOVThickness = v end)
-
--- [[ MOVEMENT & OTHER UTILITIES ]]
-CreateToggleCard(MovementPage, "41. Enable WalkSpeed", "Override player default walk speed", false, function(v) State.WalkSpeedEnabled = v end)
-CreateSliderCard(MovementPage, "42. WalkSpeed Adjuster", 1, 500, 16, function(v) State.WalkSpeed = v end)
-CreateToggleCard(MovementPage, "43. Enable JumpPower", "Override player default jump height", false, function(v) State.JumpPowerEnabled = v end)
-CreateSliderCard(MovementPage, "44. JumpPower Adjuster", 1, 500, 50, function(v) State.JumpPower = v end)
-
-CreateToggleCard(MiscPage, "45. Anti-AFK Protection", "Prevent idle disconnection kicks (20min)", true, function(v) State.AntiAFK = v end)
-CreateToggleCard(MiscPage, "Custom FOV Override", "Modify camera field of view angle", false, function(v) State.FOVEnabled = v end)
-CreateSliderCard(MiscPage, "Camera FOV Angle", 30, 120, 70, function(v) State.FOV = v end)
-
--- [[ BUILT-IN SCRIPTS PAGE ]]
-CreateActionCard(ScriptsPage, "Infinite Yield v5", "Full administrative command suite & tools", "EXECUTE", function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()
-end)
-
-CreateActionCard(ScriptsPage, "Remote Spy V3", "Monitor and log network remotes in real time", "EXECUTE", function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/infyiff/backup/main/SimpleSpyV3/main.lua"))()
-end)
-
--- ========================================================================================================================
--- [DRAWING API FOV CIRCLE & SNAPLINE INITIALIZATION]
--- ========================================================================================================================
-
-local FOVCircle = nil
-local SnapLine = nil
-
-pcall(function()
-    if Drawing then
-        FOVCircle = Drawing.new("Circle")
-        FOVCircle.Visible = false
-        FOVCircle.Color = Theme.Accent
-        FOVCircle.Thickness = 1
-        FOVCircle.NumSides = 64
-        FOVCircle.Filled = false
-
-        SnapLine = Drawing.new("Line")
-        SnapLine.Visible = false
-        SnapLine.Color = Color3.fromRGB(255, 35, 75)
-        SnapLine.Thickness = 1.5
-    end
-end)
-
--- ========================================================================================================================
--- [AIMBOT SEARCH ENGINE & CORE LOGIC]
--- ========================================================================================================================
-
-local CurrentTarget = nil
-
-local function GetClosestTarget()
-    local closestPlayer = nil
-    local shortestDistance = State.Aimbot.FOVRadius
-
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Humanoid") and player.Character:FindFirstChild("Head") then
-            -- Team Check
-            if State.Aimbot.TeamCheck and player.Team == LocalPlayer.Team then
-                continue
-            end
-            
-            -- Health Check
-            if player.Character.Humanoid.Health <= 0 then
-                continue
-            end
-
-            local head = player.Character.Head
-            local screenPos, onScreen = Camera:WorldToViewportPoint(head.Position)
-
-            if onScreen then
-                local mousePos = UserInputService:GetMouseLocation()
-                local distance = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-
-                -- Wall Visibility Check
-                if State.Aimbot.VisibilityCheck then
-                    local ray = Ray.new(Camera.CFrame.Position, (head.Position - Camera.CFrame.Position).Unit * State.Aimbot.MaxTargetDistance)
-                    local hitPart = workspace:FindPartOnWithIgnoreList(ray, {LocalPlayer.Character})
-                    if hitPart and not hitPart:IsDescendantOf(player.Character) then
-                        continue
-                    end
-                end
-
-                if distance < shortestDistance then
-                    shortestDistance = distance
-                    closestPlayer = player
-                end
-            end
-        end
-    end
-    return closestPlayer
-end
-
--- ================================================================================================================= realm
--- [RENDER STEPT LOOPS & EVENTS]
--- ========================================================================================================================
-
--- Anti-AFK Connection
-pcall(function()
-    local VirtualUser = game:GetService("VirtualUser")
-    LocalPlayer.Idled:Connect(function()
-        if State.AntiAFK then
-            VirtualUser:CaptureController()
-            VirtualUser:ClickButton2(Vector2.new())
-        end
-    end)
-end)
-
--- Menu Keybind [K]
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if not gameProcessed and input.KeyCode == Enum.KeyCode.K then
-        if MainFrame then
-            MainFrame.Visible = not MainFrame.Visible
-        end
-    end
-end)
-
--- RenderStepped Main Loop
+-- RGB RENDER DÖNGÜSÜ (GUI Renk Güncellemesi)
 RunService.RenderStepped:Connect(function()
-    local mousePos = UserInputService:GetMouseLocation()
+    mainStroke.Color = currentRgbColor
+    talkBtn.BackgroundColor3 = currentRgbColor
+end)
 
-    -- 1. FOV Ring Render Update
-    if FOVCircle then
-        FOVCircle.Visible = State.Aimbot.ShowFOV
-        FOVCircle.Position = mousePos
-        FOVCircle.Radius = State.Aimbot.FOVRadius
-        FOVCircle.Filled = State.Aimbot.FOVFilled
-        FOVCircle.Thickness = State.Aimbot.FOVThickness
+-- ==========================================================
+-- 2. DRAG & AVATAR UPDATE
+-- ==========================================================
+local dragging, dragInput, dragStart, startPos
+titleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = mainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
     end
+end)
 
-    -- 2. Movement & Humanoid Tweaks
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-        local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if State.WalkSpeedEnabled then humanoid.WalkSpeed = State.WalkSpeed end
-        if State.JumpPowerEnabled then humanoid.UseJumpPower = true; humanoid.JumpPower = State.JumpPower end
+titleBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
     end
+end)
 
-    -- 3. Camera FOV
-    if State.FOVEnabled and Camera then
-        Camera.FieldOfView = State.FOV
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
+end)
 
-    -- 4. Aimbot Lock Loop
-    local isHoldingKey = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
-    if State.Aimbot.Enabled and (not State.Aimbot.KeybindHold or isHoldingKey) then
-        CurrentTarget = GetClosestTarget()
-        if CurrentTarget and CurrentTarget.Character and CurrentTarget.Character:FindFirstChild("Head") then
-            local targetHead = CurrentTarget.Character.Head.Position
-            
-            -- Predictive Aiming Engine
-            if State.Aimbot.PredictMovement and CurrentTarget.Character:FindFirstChild("HumanoidRootPart") then
-                local velocity = CurrentTarget.Character.HumanoidRootPart.Velocity
-                targetHead = targetHead + (velocity * 0.12)
+nameInput:GetPropertyChangedSignal("Text"):Connect(function()
+    local text = nameInput.Text
+    if #text >= 3 then
+        task.spawn(function()
+            local success, userId = pcall(function() return Players:GetUserIdFromNameAsync(text) end)
+            if success and userId then
+                avatarImage.Image = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. userId .. "&width=150&height=150&format=png"
             end
+        end)
+    end
+end)
 
-            -- Camera Aim Lock Interpolation (Smoothness)
-            local currentCFrame = Camera.CFrame
-            local targetCFrame = CFrame.new(currentCFrame.Position, targetHead)
-            Camera.CFrame = currentCFrame:Lerp(targetCFrame, 1 / math.max(1, State.Aimbot.Smoothness))
+-- ==========================================================
+-- 3. ANIMASYON MOTORU
+-- ==========================================================
+local function applyPerfectAnimations(npc)
+    local humanoid = npc:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
 
-            -- Snapline Rendering
-            if SnapLine and State.Aimbot.ShowTargetSnapline then
-                local screenPos, onScreen = Camera:WorldToViewportPoint(targetHead)
-                if onScreen then
-                    SnapLine.Visible = true
-                    SnapLine.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
-                    SnapLine.To = Vector2.new(screenPos.X, screenPos.Y)
-                else
-                    SnapLine.Visible = false
-                end
-            end
-        else
-            if SnapLine then SnapLine.Visible = false end
-        end
+    local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
+    activeAnimations = {}
+
+    local idleAnim = Instance.new("Animation")
+    local walkAnim = Instance.new("Animation")
+
+    if humanoid.RigType == Enum.HumanoidRigType.R15 then
+        idleAnim.AnimationId = "rbxassetid://507766388"
+        walkAnim.AnimationId = "rbxassetid://913402848"
     else
-        if SnapLine then SnapLine.Visible = false end
+        idleAnim.AnimationId = "rbxassetid://180435571"
+        walkAnim.AnimationId = "rbxassetid://180436334"
     end
+
+    local trackIdle = animator:LoadAnimation(idleAnim)
+    local trackWalk = animator:LoadAnimation(walkAnim)
+
+    trackIdle.Priority = Enum.AnimationPriority.Core
+    trackWalk.Priority = Enum.AnimationPriority.Movement
+
+    activeAnimations.idle = trackIdle
+    activeAnimations.walk = trackWalk
+
+    trackIdle:Play(0.2)
+    currentAnimState = "Idle"
+end
+
+local function setAnimState(state)
+    if currentAnimState == state then return end
+
+    if state == "Walk" then
+        if activeAnimations.idle then activeAnimations.idle:Stop(0.2) end
+        if activeAnimations.walk then activeAnimations.walk:Play(0.2) end
+    elseif state == "Idle" then
+        if activeAnimations.walk then activeAnimations.walk:Stop(0.2) end
+        if activeAnimations.idle then activeAnimations.idle:Play(0.2) end
+    end
+
+    currentAnimState = state
+end
+
+-- ==========================================================
+-- 4. DOKUNMATİK KUMANDA MOTORU
+-- ==========================================================
+local padHeld = {Up = false, Down = false, Left = false, Right = false}
+
+btnUp.MouseButton1Down:Connect(function() padHeld.Up = true end)
+btnUp.MouseButton1Up:Connect(function() padHeld.Up = false end)
+
+btnDown.MouseButton1Down:Connect(function() padHeld.Down = true end)
+btnDown.MouseButton1Up:Connect(function() padHeld.Down = false end)
+
+btnLeft.MouseButton1Down:Connect(function() padHeld.Left = true end)
+btnLeft.MouseButton1Up:Connect(function() padHeld.Left = false end)
+
+btnRight.MouseButton1Down:Connect(function() padHeld.Right = true end)
+btnRight.MouseButton1Up:Connect(function() padHeld.Right = false end)
+
+btnJump.MouseButton1Click:Connect(function()
+    if activeNPC then
+        local humanoid = activeNPC:FindFirstChildOfClass("Humanoid")
+        if humanoid then humanoid.Jump = true end
+    end
+end)
+
+local function startControl(npc)
+    if moveConnection then moveConnection:Disconnect() end
+
+    local humanoid = npc:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    applyPerfectAnimations(npc)
+
+    moveConnection = RunService.RenderStepped:Connect(function()
+        if not npc or not npc.Parent then
+            if moveConnection then moveConnection:Disconnect() end
+            return
+        end
+
+        local moveVector = Vector3.zero
+        local cameraCFrame = Workspace.CurrentCamera.CFrame
+
+        if padHeld.Up then moveVector = moveVector + cameraCFrame.LookVector end
+        if padHeld.Down then moveVector = moveVector - cameraCFrame.LookVector end
+        if padHeld.Left then moveVector = moveVector - cameraCFrame.RightVector end
+        if padHeld.Right then moveVector = moveVector + cameraCFrame.RightVector end
+
+        moveVector = Vector3.new(moveVector.X, 0, moveVector.Z)
+
+        if moveVector.Magnitude > 0 then
+            humanoid:Move(moveVector.Unit, false)
+            setAnimState("Walk")
+        else
+            humanoid:Move(Vector3.zero, false)
+            setAnimState("Idle")
+        end
+    end)
+end
+
+-- ==========================================================
+-- 5. SOURCE CHAT SİSTEMİ İLE KONUŞTURMA
+-- ==========================================================
+talkBtn.MouseButton1Click:Connect(function()
+    local msg = chatInput.Text
+    if msg == "" then return end
+
+    -- Öncelik 1: Spawn edilen Visual NPC varsa onu konuştur
+    if activeNPC then
+        fallbackChat(activeNPC, msg)
+    else
+        -- Öncelik 2: Kutudaki oyuncu adı oyundakilerden biriyse onu konuştur (Senin Source Mantığın)
+        local target = Players:FindFirstChild(nameInput.Text)
+        if target and target.Character then
+            fallbackChat(target.Character, msg)
+        end
+    end
+
+    chatInput.Text = ""
+end)
+
+-- ==========================================================
+-- 6. SPAWN LOGIC (3 TIKLAMA)
+-- ==========================================================
+spawnBtn.MouseButton1Click:Connect(function()
+    local targetName = nameInput.Text
+    if targetName == "" then return end
+
+    clickCount = 0
+    spawnBtn.Text = "3 TIKLA (0/3)"
+
+    if clickConnection then clickConnection:Disconnect() end
+
+    clickConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            clickCount = clickCount + 1
+            spawnBtn.Text = "3 TIKLA (" .. clickCount .. "/3)"
+
+            if clickCount >= 3 then
+                clickConnection:Disconnect()
+                clickConnection = nil
+                
+                targetPosition = mouse.Hit.Position
+                spawnBtn.Text = "YÜKLENİYOR..."
+
+                task.spawn(function()
+                    local success, userId = pcall(function()
+                        return Players:GetUserIdFromNameAsync(targetName)
+                    end)
+
+                    if success and userId then
+                        local charModel
+                        local getSuccess = pcall(function()
+                            charModel = Players:CreateHumanoidModelFromUserId(userId)
+                        end)
+
+                        if getSuccess and charModel then
+                            if activeNPC then activeNPC:Destroy() end
+                            activeNPC = charModel
+                            activeNPC.Name = targetName
+
+                            for _, part in ipairs(activeNPC:GetDescendants()) do
+                                if part:IsA("BasePart") then
+                                    part.CanCollide = false
+                                end
+                            end
+                            
+                            local hrp = activeNPC:FindFirstChild("HumanoidRootPart")
+                            if hrp then hrp.CanCollide = true end
+
+                            activeNPC:PivotTo(CFrame.new(targetPosition + Vector3.new(0, 3, 0)))
+
+                            activeNPC.Parent = Workspace
+                            
+                            task.wait(0.1)
+                            startControl(activeNPC)
+
+                            spawnBtn.Text = "SPAWN ET"
+                        else
+                            spawnBtn.Text = "HATA!"
+                            task.wait(1.5)
+                            spawnBtn.Text = "SPAWN ET"
+                        end
+                    else
+                        spawnBtn.Text = "BULUNAMADI!"
+                        task.wait(1.5)
+                        spawnBtn.Text = "SPAWN ET"
+                    end
+                end)
+            end
+        end
+    end)
+end)
+
+removeBtn.MouseButton1Click:Connect(function()
+    if activeNPC then
+        activeNPC:Destroy()
+        activeNPC = nil
+    end
+    if moveConnection then
+        moveConnection:Disconnect()
+    end
+    if clickConnection then
+        clickConnection:Disconnect()
+    end
+    spawnBtn.Text = "SPAWN ET"
 end)
