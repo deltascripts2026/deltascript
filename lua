@@ -1,5 +1,5 @@
 -- ==========================================================
---  ATEZ HUB - SOURCE INTEGRATED RGB SPAWNER & CHAT
+--  ATEZ HUB - COMPACT SPAWNER + BOTTOM SERVER PLAYER PANEL
 -- ==========================================================
 
 local Players = game:GetService("Players")
@@ -22,11 +22,23 @@ local clickCount = 0
 local clickConnection = nil
 local targetPosition = nil
 
--- ==========================================================
--- SENİN SOURCE'UNDAKİ RGB COLOR & FALLBACK CHAT SİSTEMİ
--- ==========================================================
-local currentRgbColor = Color3.fromRGB(0, 255, 170)
+-- CLIPBOARD (KOPYALAMA) FONKSİYONU
+local function copyToClipboard(text)
+    if setclipboard then
+        setclipboard(text)
+        return true
+    elseif toclipboard then
+        toclipboard(text)
+        return true
+    elseif set_clipboard then
+        set_clipboard(text)
+        return true
+    end
+    return false
+end
 
+-- RGB COLOR MOTORU
+local currentRgbColor = Color3.fromRGB(0, 255, 170)
 task.spawn(function()
     while task.wait() do
         local hue = tick() % 5 / 5
@@ -34,7 +46,7 @@ task.spawn(function()
     end
 end)
 
--- Senin Source'undaki Fallback Chat Fonksiyonu
+-- FALLBACK CHAT
 local function fallbackChat(targetCharacter, message)
     if targetCharacter and targetCharacter:FindFirstChild("Head") then
         pcall(function()
@@ -49,7 +61,7 @@ if playerGui:FindFirstChild("AtezCompactSpawner") then
 end
 
 -- ==========================================================
--- 1. KOMPAKT GUI
+-- 1. KOMPAKT GUI & ALT OYUNCU LİSTESİ PANELİ
 -- ==========================================================
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "AtezCompactSpawner"
@@ -59,10 +71,11 @@ screenGui.Parent = playerGui
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
 mainFrame.Size = UDim2.new(0, 220, 0, 340)
-mainFrame.Position = UDim2.new(0.04, 0, 0.2, 0)
+mainFrame.Position = UDim2.new(0.04, 0, 0.15, 0)
 mainFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
 mainFrame.BackgroundTransparency = 0.1
 mainFrame.BorderSizePixel = 0
+mainFrame.ClipsDescendants = false
 mainFrame.Parent = screenGui
 
 local mainCorner = Instance.new("UICorner")
@@ -73,6 +86,52 @@ local mainStroke = Instance.new("UIStroke")
 mainStroke.Thickness = 1.5
 mainStroke.Transparency = 0.2
 mainStroke.Parent = mainFrame
+
+-- ALT PANEL (MENÜNÜN ALTINA YERLEŞTİRİLDİ)
+local bottomPanel = Instance.new("Frame")
+bottomPanel.Name = "BottomPlayerPanel"
+bottomPanel.Size = UDim2.new(1, 0, 0, 130)
+bottomPanel.Position = UDim2.new(0, 0, 1, 8) -- Ana menünün 8px altında durur
+bottomPanel.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+bottomPanel.BackgroundTransparency = 0.1
+bottomPanel.BorderSizePixel = 0
+bottomPanel.Parent = mainFrame
+
+local bottomCorner = Instance.new("UICorner")
+bottomCorner.CornerRadius = UDim.new(0, 10)
+bottomCorner.Parent = bottomPanel
+
+local bottomStroke = Instance.new("UIStroke")
+bottomStroke.Thickness = 1.5
+bottomStroke.Transparency = 0.2
+bottomStroke.Parent = bottomPanel
+
+local bottomTitle = Instance.new("TextLabel")
+bottomTitle.Size = UDim2.new(1, 0, 0, 24)
+bottomTitle.Text = "SUNUCU PROFIL LİNKLERİ (TIKLA & KOPYALA)"
+bottomTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+bottomTitle.TextSize = 9
+bottomTitle.Font = Enum.Font.GothamBold
+bottomTitle.BackgroundTransparency = 1
+bottomTitle.Parent = bottomPanel
+
+local playerListScroll = Instance.new("ScrollingFrame")
+playerListScroll.Size = UDim2.new(0.92, 0, 1, -28)
+playerListScroll.Position = UDim2.new(0.04, 0, 0, 24)
+playerListScroll.BackgroundTransparency = 1
+playerListScroll.BorderSizePixel = 0
+playerListScroll.ScrollBarThickness = 3
+playerListScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+playerListScroll.Parent = bottomPanel
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.Padding = UDim.new(0, 4)
+listLayout.SortOrder = Enum.SortOrder.Name
+listLayout.Parent = playerListScroll
+
+listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    playerListScroll.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 6)
+end)
 
 -- BAŞLIK BAR
 local titleBar = Instance.new("Frame")
@@ -228,14 +287,15 @@ local btnLeft = createPadButton("◄", UDim2.new(0.5, -50, 0.62, 0))
 local btnRight = createPadButton("►", UDim2.new(0.5, 20, 0.62, 0))
 local btnJump = createPadButton("ZIPLA", UDim2.new(0.5, -35, 0.35, 0), UDim2.new(0, 70, 0, 28))
 
--- RGB RENDER DÖNGÜSÜ (GUI Renk Güncellemesi)
+-- RGB RENDER DÖNGÜSÜ
 RunService.RenderStepped:Connect(function()
     mainStroke.Color = currentRgbColor
+    bottomStroke.Color = currentRgbColor
     talkBtn.BackgroundColor3 = currentRgbColor
 end)
 
 -- ==========================================================
--- 2. DRAG & AVATAR UPDATE
+-- 2. DRAG, AVATAR UPDATE & ALT OYUNCU LİSTESİ MOTORU
 -- ==========================================================
 local dragging, dragInput, dragStart, startPos
 titleBar.InputBegan:Connect(function(input)
@@ -273,6 +333,48 @@ nameInput:GetPropertyChangedSignal("Text"):Connect(function()
         end)
     end
 end)
+
+-- ALT PANELE OYUNCULARI LİSTELEME
+local function updatePlayerList()
+    for _, child in ipairs(playerListScroll:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        local pBtn = Instance.new("TextButton")
+        pBtn.Size = UDim2.new(1, -6, 0, 22)
+        pBtn.Text = p.DisplayName .. " (@" .. p.Name .. ")"
+        pBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 32)
+        pBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        pBtn.Font = Enum.Font.GothamMedium
+        pBtn.TextSize = 9
+        pBtn.TextTruncate = Enum.TextTruncate.AtEnd
+        pBtn.Parent = playerListScroll
+
+        local pCorner = Instance.new("UICorner")
+        pCorner.CornerRadius = UDim.new(0, 4)
+        pCorner.Parent = pBtn
+
+        pBtn.MouseButton1Click:Connect(function()
+            nameInput.Text = p.Name
+            local profileUrl = "https://www.roblox.com/users/" .. p.UserId .. "/profile"
+            
+            if copyToClipboard(profileUrl) then
+                pBtn.Text = "✔ Kopyalandı!"
+                task.wait(1.2)
+                pBtn.Text = p.DisplayName .. " (@" .. p.Name .. ")"
+            else
+                pBtn.Text = "✖ Desteklenmiyor"
+                task.wait(1.2)
+                pBtn.Text = p.DisplayName .. " (@" .. p.Name .. ")"
+            end
+        end)
+    end
+end
+
+updatePlayerList()
+Players.PlayerAdded:Connect(updatePlayerList)
+Players.PlayerRemoving:Connect(updatePlayerList)
 
 -- ==========================================================
 -- 3. ANIMASYON MOTORU
@@ -381,17 +483,15 @@ local function startControl(npc)
 end
 
 -- ==========================================================
--- 5. SOURCE CHAT SİSTEMİ İLE KONUŞTURMA
+-- 5. CHAT İLE KONUŞTURMA
 -- ==========================================================
 talkBtn.MouseButton1Click:Connect(function()
     local msg = chatInput.Text
     if msg == "" then return end
 
-    -- Öncelik 1: Spawn edilen Visual NPC varsa onu konuştur
     if activeNPC then
         fallbackChat(activeNPC, msg)
     else
-        -- Öncelik 2: Kutudaki oyuncu adı oyundakilerden biriyse onu konuştur (Senin Source Mantığın)
         local target = Players:FindFirstChild(nameInput.Text)
         if target and target.Character then
             fallbackChat(target.Character, msg)
